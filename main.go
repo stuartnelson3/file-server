@@ -7,6 +7,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -14,7 +17,7 @@ import (
 
 const (
 	mkv      = ".mkv"
-	reString = "((BD|DVD)Rip)|((AAC|FLAC)[0-9]?)|BluRay|HDTV|((X|x)?264-.+)|[0-9]{3}p|mkv|WEB|S[0-9]{2}E[0-9]{2}"
+	reString = "((BD|DVD)Rip)|((AAC|FLAC)[0-9]?)|BluRay|HDTV|((X|x)?264-.+)|[0-9]{3}p|mkv|WEB|S[0-9]{2}(E[0-9]{2})?"
 )
 
 func main() {
@@ -32,19 +35,18 @@ func main() {
 		flag.Usage()
 	}
 
-	sshconfig := &ssh.ClientConfig{
+	pair, err := dialSSHSFTP(*host, &ssh.ClientConfig{
 		User: *user,
 		Auth: []ssh.AuthMethod{
 			ssh.Password(*password),
 		},
-	}
-
-	pair, err := dialSSHSFTP(*host, sshconfig)
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	remoteFiles := make(map[string]remoteFile)
+	// remoteFiles := make(map[string]remoteFile)
+	remoteFiles := []remoteFile{}
 
 	walker := pair.sftpc.Walk(*dir)
 	i := 0
@@ -56,20 +58,71 @@ func main() {
 		if i == 10 {
 			break
 		}
+		remoteFilePath := walker.Path()
+		if remoteFilePath == *dir {
+			continue
+		}
 		// Make worker pool that searches the movie api for the titles
-		if filepath.Ext(walker.Path()) == mkv {
-			remoteFiles[walker.Path()] = remoteFile{
-				title:    filepath.Base(walker.Path()),
-				fullPath: walker.Path(),
-				FileInfo: walker.Stat(),
+
+		fi := walker.Stat()
+		if fi.IsDir() {
+			// We will read the contents and put them in the
+			// struct, but we aren't going to return individual
+			// files through the API.
+			walker.SkipDir()
+
+			fileInfos, err := pair.sftpc.ReadDir(remoteFilePath)
+			if err != nil {
+				log.Printf("error reading dir %s, skipping\n", remoteFilePath)
+				continue
 			}
+
+			// Should I check for .mkv in here and ditch the whole dir if it doesn't have a video in it?
+			// Probably since that's what I'm doing for the bare files..
+			rmf := make([]remoteFile, len(fileInfos), len(fileInfos))
+			for j, fileInfo := range fileInfos {
+				rmf[j] = remoteFile{
+					title:    filepath.Base(fileInfo.Name()),
+					fullPath: filepath.Join(remoteFilePath, fileInfo.Name()),
+					FileInfo: fileInfo,
+				}
+			}
+			remoteFiles = append(remoteFiles, remoteFile{
+				title:       cleanTitle(remoteFilePath),
+				fullPath:    remoteFilePath,
+				FileInfo:    walker.Stat(),
+				dir:         true,
+				remoteFiles: rmf,
+			})
+			i++
+			continue
+		}
+
+		if filepath.Ext(remoteFilePath) == mkv {
+			remoteFiles = append(remoteFiles, remoteFile{
+				title:    cleanTitle(remoteFilePath),
+				fullPath: remoteFilePath,
+				FileInfo: walker.Stat(),
+			})
 			i++
 		}
 	}
-	for _, file := range remoteFiles {
-		fmt.Println(file.title)
-		fmt.Println(file.fullPath)
+
+	for _, v := range remoteFiles {
+		fmt.Println(v.title)
+		fmt.Println(v.fullPath)
+		if v.dir {
+			fmt.Println("dir files:")
+			for _, rf := range v.remoteFiles {
+				fmt.Println(rf.title)
+			}
+			fmt.Println("")
+		}
 	}
+
+	// if err := json.NewEncoder(os.Stdout).Encode(remoteFiles); err != nil {
+	// 	fmt.Printf("%v", err)
+	// }
 	// fs, err := sshttp.NewFileSystem(host, sshconfig)
 	// if err != nil {
 	// 	log.Fatal(err)
@@ -86,6 +139,10 @@ func main() {
 type remoteFile struct {
 	title    string
 	fullPath string
+
+	dir         bool
+	remoteFiles []remoteFile
+
 	os.FileInfo
 }
 
@@ -119,4 +176,20 @@ func dialSSHSFTP(host string, config *ssh.ClientConfig) (*clientPair, error) {
 		sshc:  sshc,
 		sftpc: sftpc,
 	}, nil
+}
+
+func cleanTitle(filename string) string {
+	base := filepath.Base(filename)
+	parts := strings.Split(base, ".")
+	for i, part := range parts {
+		time.Now().Year()
+		matched, err := regexp.MatchString(reString, part)
+		if err != nil {
+			log.Printf("error: %v", err)
+		}
+		if matched {
+			parts[i] = ""
+		}
+	}
+	return strings.Join(parts, " ")
 }
