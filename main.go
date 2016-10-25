@@ -79,21 +79,28 @@ func main() {
 			// Should I check for .mkv in here and ditch the whole dir if it doesn't have a video in it?
 			// Probably since that's what I'm doing for the bare files..
 			rmf := make([]remoteFile, len(fileInfos), len(fileInfos))
+			var videoDir bool
 			for j, fileInfo := range fileInfos {
+				if filepath.Ext(remoteFilePath) == mkv {
+					videoDir = true
+				}
 				rmf[j] = remoteFile{
 					title:    filepath.Base(fileInfo.Name()),
 					fullPath: filepath.Join(remoteFilePath, fileInfo.Name()),
 					FileInfo: fileInfo,
 				}
 			}
-			remoteFiles = append(remoteFiles, remoteFile{
-				title:       cleanTitle(remoteFilePath),
-				fullPath:    remoteFilePath,
-				FileInfo:    walker.Stat(),
-				dir:         true,
-				remoteFiles: rmf,
-			})
-			i++
+			if videoDir {
+				remoteFiles = append(remoteFiles, remoteFile{
+					title:       cleanTitle(remoteFilePath),
+					fullPath:    remoteFilePath,
+					FileInfo:    walker.Stat(),
+					dir:         true,
+					remoteFiles: rmf,
+				})
+				i++
+			}
+
 			continue
 		}
 
