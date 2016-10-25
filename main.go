@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -17,7 +16,7 @@ import (
 
 const (
 	mkv      = ".mkv"
-	reString = "((BD|DVD)Rip)|((AAC|FLAC)[0-9]?)|BluRay|HDTV|((X|x)?264-.+)|[0-9]{3}p|mkv|WEB|S[0-9]{2}(E[0-9]{2})?"
+	reString = "((BD|DVD)Rip)|((AAC|FLAC)[0-9]?)|BluRay|HDTV|((X|x)?264-.+)|[0-9]{3,4}p?|mkv|WEB|S[0-9]{2}(E[0-9]{2})?"
 )
 
 func main() {
@@ -182,7 +181,6 @@ func cleanTitle(filename string) string {
 	base := filepath.Base(filename)
 	parts := strings.Split(base, ".")
 	for i, part := range parts {
-		time.Now().Year()
 		matched, err := regexp.MatchString(reString, part)
 		if err != nil {
 			log.Printf("error: %v", err)
