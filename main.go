@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -16,7 +18,7 @@ import (
 
 const (
 	mkv      = ".mkv"
-	reString = "((BD|DVD)Rip)|((AAC|FLAC)[0-9]?)|BluRay|HDTV|((X|x)?264-.+)|[0-9]{3,4}p?|mkv|WEB|S[0-9]{2}(E[0-9]{2})?"
+	reString = "(?i)^(((BD|DVD)Rip)|((AAC|FLAC)[0-9]?)|BluRay|HDTV|(x?264-.+)|[0-9]{3,4}p?|mkv|WEB|S[0-9]{2}(E[0-9]{2})?)"
 )
 
 func main() {
@@ -85,18 +87,18 @@ func main() {
 					videoDir = true
 				}
 				rmf[j] = remoteFile{
-					title:    filepath.Base(fileInfo.Name()),
-					fullPath: filepath.Join(remoteFilePath, fileInfo.Name()),
+					Title:    filepath.Base(fileInfo.Name()),
+					FullPath: filepath.Join(remoteFilePath, fileInfo.Name()),
 					FileInfo: fileInfo,
 				}
 			}
 			if videoDir {
 				remoteFiles = append(remoteFiles, remoteFile{
-					title:       cleanTitle(remoteFilePath),
-					fullPath:    remoteFilePath,
+					Title:       cleanTitle(remoteFilePath),
+					FullPath:    remoteFilePath,
 					FileInfo:    walker.Stat(),
-					dir:         true,
-					remoteFiles: rmf,
+					Dir:         true,
+					RemoteFiles: rmf,
 				})
 				i++
 			}
@@ -106,24 +108,66 @@ func main() {
 
 		if filepath.Ext(remoteFilePath) == mkv {
 			remoteFiles = append(remoteFiles, remoteFile{
-				title:    cleanTitle(remoteFilePath),
-				fullPath: remoteFilePath,
+				Title:    cleanTitle(remoteFilePath),
+				FullPath: remoteFilePath,
 				FileInfo: walker.Stat(),
 			})
 			i++
 		}
 	}
 
-	for _, v := range remoteFiles {
-		fmt.Println(v.title)
-		fmt.Println(v.fullPath)
-		if v.dir {
-			fmt.Println("dir files:")
-			for _, rf := range v.remoteFiles {
-				fmt.Println(rf.title)
-			}
-			fmt.Println("")
+	urlFormat := "http://www.omdbapi.com/?s=%s"
+	for i, v := range remoteFiles {
+		// fmt.Println(v.title)
+		// fmt.Println(v.fullPath)
+		url := fmt.Sprintf(urlFormat, url.QueryEscape(v.Title))
+		// fmt.Printf("making request to %s\n", url)
+		resp, err := http.Get(url)
+		if err != nil {
+			log.Printf("error fetching movie: %v\n", err)
+			continue
 		}
+
+		apiResp := apiResponse{}
+		json.NewDecoder(resp.Body).Decode(&apiResp)
+		resp.Body.Close()
+
+		if len(apiResp.Search) > 0 {
+			// fmt.Println(apiResp.Search[0])
+			remoteFiles[i].ApiMovie = apiResp.Search[0]
+		}
+	}
+
+	apiMatches := make([]remoteFile, 0, len(remoteFiles))
+	for _, v := range remoteFiles {
+		if v.ApiMovie.Poster != "" {
+			apiMatches = append(apiMatches, v)
+		}
+	}
+
+	fmt.Println(apiMatches)
+
+	http.HandleFunc("/", func(m []remoteFile) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if origin := r.Header.Get("Origin"); origin != "" {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+				w.Header().Set("Access-Control-Allow-Headers",
+					"Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
+			}
+
+			if r.Method == "OPTIONS" {
+				return
+			}
+
+			json.NewEncoder(w).Encode(m)
+		}
+	}(apiMatches))
+
+	port := "8080"
+	log.Printf("starting listener on port %s", port)
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		log.Fatal(err)
 	}
 
 	// if err := json.NewEncoder(os.Stdout).Encode(remoteFiles); err != nil {
@@ -143,13 +187,27 @@ func main() {
 }
 
 type remoteFile struct {
-	title    string
-	fullPath string
+	Title    string
+	FullPath string
 
-	dir         bool
-	remoteFiles []remoteFile
+	Dir         bool
+	RemoteFiles []remoteFile
+
+	ApiMovie apiMovie
 
 	os.FileInfo
+}
+
+type apiResponse struct {
+	Search []apiMovie
+}
+
+type apiMovie struct {
+	Title  string
+	Year   string
+	ImdbID string
+	Type   string
+	Poster string
 }
 
 type clientPair struct {
@@ -196,5 +254,5 @@ func cleanTitle(filename string) string {
 			parts[i] = ""
 		}
 	}
-	return strings.Join(parts, " ")
+	return strings.TrimSpace(strings.Join(parts, " "))
 }
