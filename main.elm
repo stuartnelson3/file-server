@@ -17,25 +17,16 @@ main =
 
 -- Model
 
-type alias Model =
-  { title : String
-  , imgUrl : String
-  , search : String
-  , year : String
-  , kind : String
-  }
-
+type alias Model = List ApiResponse
 
 init : (Model, Cmd Msg)
-init =
-  (Model "" "" "" "" "", Cmd.none)
+init = ([], searchApi)
 
 
 -- Update
 
 type Msg
   = Search
-  | NewInput String
   | FetchSucceed (List ApiResponse)
   | FetchFail Http.Error
 
@@ -44,16 +35,10 @@ update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
     Search ->
-      (model, searchApi model.search)
-
-    NewInput search ->
-      ({ model | search = search }, Cmd.none)
+      (model, searchApi)
 
     FetchSucceed results ->
-      let
-          resp = (Maybe.withDefault (ApiResponse "" "" "" "" "") (List.head results))
-      in
-        ({ model | imgUrl = resp.poster, title = resp.title, year = resp.year, kind = resp.kind }, Cmd.none)
+        (results, Cmd.none)
 
     FetchFail _ ->
       (model, Cmd.none)
@@ -62,18 +47,21 @@ update msg model =
 -- View
 view : Model -> Html Msg
 view model =
-  div []
-    [ input [ type' "text", placeholder "Movie search term", onInput NewInput ] []
-    , button [ onClick Search ] [ text "Search" ]
-    , br [] []
-    , img [ src model.imgUrl ] []
-    , h1 [] [ text model.title ]
-    , div []
-      [ p [] [ text model.kind ]
-      , p [] [ text model.year ]
-      ]
-    ]
+  div [] (List.map filmView model)
 
+filmView : ApiResponse -> Html msg
+filmView resp =
+  let
+      movie = resp.apiMovie
+  in
+    div []
+      [ img [ src movie.poster ] []
+      , h1 [] [ text movie.title ]
+      , div []
+        [ p [] [ text movie.kind ]
+        , p [] [ text movie.year ]
+        ]
+      ]
 
 -- SUBSCRIPTIONS
 
@@ -85,32 +73,43 @@ subscriptions model =
 
 -- HTTP
 
-searchApi : String -> Cmd Msg
-searchApi search =
+searchApi : Cmd Msg
+searchApi =
   let
-      url = "http://www.omdbapi.com/?s=" ++ search
+      url = "http://localhost:8080"
   in
      Task.perform FetchFail FetchSucceed (Http.get decodeApiResponse url)
 
 decodeApiResponse : Json.Decoder (List ApiResponse)
 decodeApiResponse =
-  -- How to get first index in search
-  Json.at ["Search"] (Json.list responseDecoder)
+  Json.list responseDecoder
+
+type alias MovieResponse =
+  { imdbID : String
+  , poster : String
+  , title : String
+  , kind : String
+  , year : String
+  }
 
 type alias ApiResponse =
   { title : String
-  , year : String
-  , imdbID : String
-  , kind : String
-  , poster : String
+  , fullPath : String
+  , apiMovie : MovieResponse
   }
 
 responseDecoder : Json.Decoder ApiResponse
 responseDecoder =
-  Json.object5 ApiResponse
+  Json.object3 ApiResponse
     ("Title" := Json.string)
-    ("Year" := Json.string)
-    ("imdbID" := Json.string)
-    ("Type" := Json.string)
-    ("Poster" := Json.string)
+    ("FullPath" := Json.string)
+    ("ApiMovie" := apiResponseDecoder)
 
+apiResponseDecoder : Json.Decoder MovieResponse
+apiResponseDecoder =
+  Json.object5 MovieResponse
+    ("ImdbID" := Json.string)
+    ("Poster" := Json.string)
+    ("Title" := Json.string)
+    ("Type" := Json.string)
+    ("Year" := Json.string)
