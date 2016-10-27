@@ -36,7 +36,9 @@ func TestParsingFileNames(t *testing.T) {
 		}
 		files = append(files, strings.Join(parts, " "))
 	}
-	fmt.Println(files)
+	for _, file := range files {
+		fmt.Println(file)
+	}
 	// Maybe want to nuke 4 digit numbers from before today's year? But what about 1984???
 	if err := scanner.Err(); err != nil {
 		t.Fatalf("%v", err)
