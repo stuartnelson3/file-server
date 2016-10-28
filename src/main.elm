@@ -47,19 +47,47 @@ update msg model =
 -- View
 view : Model -> Html Msg
 view model =
-  div [] (List.map filmView model)
+  div [
+    classList [
+      ("cf", True),
+      ("pa2", True)
+    ]
+  ] (List.map filmView model)
 
 filmView : ApiResponse -> Html msg
 filmView resp =
   let
       movie = resp.apiMovie
   in
-    div []
-      [ img [ src movie.poster ] []
-      , h1 [] [ text movie.title ]
-      , div []
-        [ p [] [ text movie.kind ]
-        , p [] [ text movie.year ]
+    div [
+        classList [
+          ("fl", True),
+          ("w-50", False),
+          ("pa2", True),
+          ("w-20", True),
+          ("w-w-20-l", True)
+        ]
+      ]
+      [ img [
+          src movie.poster,
+          classList [
+            ("db", True),
+            ("w-100", True),
+            ("outline", True),
+            ("black-10", True),
+            ("dim", True)
+          ]
+        ] []
+      , dl [
+          classList [
+            ("mt2", True),
+            ("f6", True),
+            ("lh-copy", True)
+            ]
+        ] [
+          dt [ class "m10 black truncate w-100" ] [ text movie.title ],
+          dt [ class "m10 black truncate w-100" ] [ text movie.year ],
+          dt [ class "m10 black truncate w-100" ] [ text movie.kind ]
         ]
       ]
 
@@ -76,7 +104,7 @@ subscriptions model =
 searchApi : Cmd Msg
 searchApi =
   let
-      url = "http://localhost:8080"
+      url = "http://localhost:8080/api/v0/movies"
   in
      Task.perform FetchFail FetchSucceed (Http.get decodeApiResponse url)
 

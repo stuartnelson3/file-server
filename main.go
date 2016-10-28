@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -32,122 +33,23 @@ func main() {
 	)
 	flag.Parse()
 
-	if *host == "" || *user == "" || *password == "" {
+	if *host == "" || *user == "" || *password == "" || *dir == "" {
 		flag.Usage()
 	}
 
-	pair, err := dialSSHSFTP(*host, &ssh.ClientConfig{
-		User: *user,
-		Auth: []ssh.AuthMethod{
-			ssh.Password(*password),
-		},
-	})
+	// apiMatches := getRemoteFiles(*host, *user, *password, *dir)
+	f, err := os.Open("example.json")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("read: %v", err)
+	}
+	defer f.Close()
+
+	apiMatches := []remoteFile{}
+	if err := json.NewDecoder(f).Decode(&apiMatches); err != nil {
+		log.Fatalf("decode: %v", err)
 	}
 
-	// remoteFiles := make(map[string]remoteFile)
-	remoteFiles := []remoteFile{}
-
-	walker := pair.sftpc.Walk(*dir)
-	i := 0
-	for walker.Step() {
-		if err := walker.Err(); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			continue
-		}
-		if i == 10 {
-			break
-		}
-		remoteFilePath := walker.Path()
-		if remoteFilePath == *dir {
-			continue
-		}
-		// Make worker pool that searches the movie api for the titles
-
-		fi := walker.Stat()
-		if fi.IsDir() {
-			// We will read the contents and put them in the
-			// struct, but we aren't going to return individual
-			// files through the API.
-			walker.SkipDir()
-
-			fileInfos, err := pair.sftpc.ReadDir(remoteFilePath)
-			if err != nil {
-				log.Printf("error reading dir %s, skipping\n", remoteFilePath)
-				continue
-			}
-
-			// Should I check for .mkv in here and ditch the whole dir if it doesn't have a video in it?
-			// Probably since that's what I'm doing for the bare files..
-			rmf := make([]remoteFile, len(fileInfos), len(fileInfos))
-			var videoDir bool
-			for j, fileInfo := range fileInfos {
-				if filepath.Ext(remoteFilePath) == mkv {
-					videoDir = true
-				}
-				rmf[j] = remoteFile{
-					Title:    filepath.Base(fileInfo.Name()),
-					FullPath: filepath.Join(remoteFilePath, fileInfo.Name()),
-					FileInfo: fileInfo,
-				}
-			}
-			if videoDir {
-				remoteFiles = append(remoteFiles, remoteFile{
-					Title:       cleanTitle(remoteFilePath),
-					FullPath:    remoteFilePath,
-					FileInfo:    walker.Stat(),
-					Dir:         true,
-					RemoteFiles: rmf,
-				})
-				i++
-			}
-
-			continue
-		}
-
-		if filepath.Ext(remoteFilePath) == mkv {
-			remoteFiles = append(remoteFiles, remoteFile{
-				Title:    cleanTitle(remoteFilePath),
-				FullPath: remoteFilePath,
-				FileInfo: walker.Stat(),
-			})
-			i++
-		}
-	}
-
-	urlFormat := "http://www.omdbapi.com/?s=%s"
-	for i, v := range remoteFiles {
-		// fmt.Println(v.title)
-		// fmt.Println(v.fullPath)
-		url := fmt.Sprintf(urlFormat, url.QueryEscape(v.Title))
-		// fmt.Printf("making request to %s\n", url)
-		resp, err := http.Get(url)
-		if err != nil {
-			log.Printf("error fetching movie: %v\n", err)
-			continue
-		}
-
-		apiResp := apiResponse{}
-		json.NewDecoder(resp.Body).Decode(&apiResp)
-		resp.Body.Close()
-
-		if len(apiResp.Search) > 0 {
-			// fmt.Println(apiResp.Search[0])
-			remoteFiles[i].ApiMovie = apiResp.Search[0]
-		}
-	}
-
-	apiMatches := make([]remoteFile, 0, len(remoteFiles))
-	for _, v := range remoteFiles {
-		if v.ApiMovie.Poster != "" {
-			apiMatches = append(apiMatches, v)
-		}
-	}
-
-	fmt.Println(apiMatches)
-
-	http.HandleFunc("/", func(m []remoteFile) http.HandlerFunc {
+	http.HandleFunc("/api/v0/movies", func(m []remoteFile) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if origin := r.Header.Get("Origin"); origin != "" {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
@@ -163,6 +65,26 @@ func main() {
 			json.NewEncoder(w).Encode(m)
 		}
 	}(apiMatches))
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		index, err := os.Open("index.html")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer index.Close()
+		http.ServeContent(w, r, "index", time.Now(), index)
+	})
+
+	http.HandleFunc("/script.js", func(w http.ResponseWriter, r *http.Request) {
+		script, err := os.Open("script.js")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer script.Close()
+		http.ServeContent(w, r, "script", time.Now(), script)
+	})
 
 	port := "8080"
 	log.Printf("starting listener on port %s", port)
@@ -255,4 +177,115 @@ func cleanTitle(filename string) string {
 		}
 	}
 	return strings.TrimSpace(strings.Join(parts, " "))
+}
+
+func getRemoteFiles(host, user, password, dir string) []remoteFile {
+	pair, err := dialSSHSFTP(host, &ssh.ClientConfig{
+		User: user,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(password),
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	remoteFiles := []remoteFile{}
+
+	walker := pair.sftpc.Walk(dir)
+	i := 0
+	for walker.Step() {
+		if err := walker.Err(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			continue
+		}
+		if i == 10 {
+			break
+		}
+		remoteFilePath := walker.Path()
+		if remoteFilePath == dir {
+			continue
+		}
+		// Make worker pool that searches the movie api for the titles
+
+		fi := walker.Stat()
+		if fi.IsDir() {
+			// We will read the contents and put them in the
+			// struct, but we aren't going to return individual
+			// files through the API.
+			walker.SkipDir()
+
+			fileInfos, err := pair.sftpc.ReadDir(remoteFilePath)
+			if err != nil {
+				log.Printf("error reading dir %s, skipping\n", remoteFilePath)
+				continue
+			}
+
+			// Should I check for .mkv in here and ditch the whole dir if it doesn't have a video in it?
+			// Probably since that's what I'm doing for the bare files..
+			rmf := make([]remoteFile, len(fileInfos), len(fileInfos))
+			var videoDir bool
+			for j, fileInfo := range fileInfos {
+				if filepath.Ext(remoteFilePath) == mkv {
+					videoDir = true
+				}
+				rmf[j] = remoteFile{
+					Title:    filepath.Base(fileInfo.Name()),
+					FullPath: filepath.Join(remoteFilePath, fileInfo.Name()),
+					FileInfo: fileInfo,
+				}
+			}
+			if videoDir {
+				remoteFiles = append(remoteFiles, remoteFile{
+					Title:       cleanTitle(remoteFilePath),
+					FullPath:    remoteFilePath,
+					FileInfo:    walker.Stat(),
+					Dir:         true,
+					RemoteFiles: rmf,
+				})
+				i++
+			}
+
+			continue
+		}
+
+		if filepath.Ext(remoteFilePath) == mkv {
+			remoteFiles = append(remoteFiles, remoteFile{
+				Title:    cleanTitle(remoteFilePath),
+				FullPath: remoteFilePath,
+				FileInfo: walker.Stat(),
+			})
+			i++
+		}
+	}
+
+	urlFormat := "http://www.omdbapi.com/?s=%s"
+	for i, v := range remoteFiles {
+		// fmt.Println(v.title)
+		// fmt.Println(v.fullPath)
+		url := fmt.Sprintf(urlFormat, url.QueryEscape(v.Title))
+		// fmt.Printf("making request to %s\n", url)
+		resp, err := http.Get(url)
+		if err != nil {
+			log.Printf("error fetching movie: %v\n", err)
+			continue
+		}
+
+		apiResp := apiResponse{}
+		json.NewDecoder(resp.Body).Decode(&apiResp)
+		resp.Body.Close()
+
+		if len(apiResp.Search) > 0 {
+			// fmt.Println(apiResp.Search[0])
+			remoteFiles[i].ApiMovie = apiResp.Search[0]
+		}
+	}
+
+	apiMatches := make([]remoteFile, 0, len(remoteFiles))
+	for _, v := range remoteFiles {
+		if v.ApiMovie.Poster != "" {
+			apiMatches = append(apiMatches, v)
+		}
+	}
+	return apiMatches
 }
