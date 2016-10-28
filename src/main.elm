@@ -85,11 +85,15 @@ filmView resp =
             ("lh-copy", True)
             ]
         ] [
-          dt [ class "m10 black truncate w-100" ] [ text movie.title ],
-          dt [ class "m10 black truncate w-100" ] [ text movie.year ],
-          dt [ class "m10 black truncate w-100" ] [ text movie.kind ]
+          filmMetaData movie.title,
+          filmMetaData movie.year,
+          filmMetaData movie.kind
         ]
       ]
+
+filmMetaData : String -> Html msg
+filmMetaData data =
+  dt [ class "m10 black truncate w-100" ] [ text data ]
 
 -- SUBSCRIPTIONS
 
