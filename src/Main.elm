@@ -143,7 +143,7 @@ view model =
       let
         one = Debug.log "view: name" name
       in
-        movieView model.movie
+        filmView model.movie
 
     _ ->
       notFoundView model
@@ -156,7 +156,9 @@ notFoundView model =
 
 movieView : ApiResponse -> Html Msg
 movieView model =
-  filmView model
+  a [ class "db link dim tc"
+    , href ("/movie/" ++ model.apiMovie.imdbID) ]
+    [ filmView model ]
 
 moviesView : List ApiResponse -> Html Msg
 moviesView movies =
@@ -165,7 +167,7 @@ moviesView movies =
       ("cf", True),
       ("pa2", True)
     ]
-  ] (List.map filmView movies)
+  ] (List.map movieView movies)
 
 
 filmView : ApiResponse -> Html msg
@@ -188,8 +190,7 @@ filmView resp =
             ("db", True),
             ("w-100", True),
             ("outline", True),
-            ("black-10", True),
-            ("dim", True)
+            ("black-10", True)
           ]
         ] []
       , dl [
