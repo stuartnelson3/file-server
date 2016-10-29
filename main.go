@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -8,12 +9,13 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/pkg/sftp"
+	"github.com/stuartnelson3/guac"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -66,16 +68,6 @@ func main() {
 		}
 	}(apiMatches))
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		index, err := os.Open("index.html")
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		defer index.Close()
-		http.ServeContent(w, r, "index", time.Now(), index)
-	})
-
 	http.HandleFunc("/script.js", func(w http.ResponseWriter, r *http.Request) {
 		script, err := os.Open("script.js")
 		if err != nil {
@@ -83,8 +75,47 @@ func main() {
 			return
 		}
 		defer script.Close()
-		http.ServeContent(w, r, "script", time.Now(), script)
+		fs, err := script.Stat()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		http.ServeContent(w, r, "script", fs.ModTime(), script)
 	})
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		index, err := os.Open("src/index.html")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer index.Close()
+		fs, err := index.Stat()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		http.ServeContent(w, r, "index", fs.ModTime(), index)
+	})
+
+	// Recompile the elm code whenever a change is detected.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	recompileFn := func() error {
+		cmd := exec.Command("elm-make", "src/Main.elm", "--output", "script.js")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+
+	watcher, err := guac.NewWatcher(ctx, "./src", recompileFn)
+	if err != nil {
+		log.Fatalf("error watching: %v", err)
+	}
+	go watcher.Run()
 
 	port := "8080"
 	log.Printf("starting listener on port %s", port)
