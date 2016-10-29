@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -64,6 +65,26 @@ func main() {
 			json.NewEncoder(w).Encode(m)
 		}
 	}(apiMatches))
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		index, err := os.Open("index.html")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer index.Close()
+		http.ServeContent(w, r, "index", time.Now(), index)
+	})
+
+	http.HandleFunc("/script.js", func(w http.ResponseWriter, r *http.Request) {
+		script, err := os.Open("script.js")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer script.Close()
+		http.ServeContent(w, r, "script", time.Now(), script)
+	})
 
 	port := "8080"
 	log.Printf("starting listener on port %s", port)
