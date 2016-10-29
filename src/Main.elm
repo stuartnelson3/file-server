@@ -7,6 +7,8 @@ import Json.Decode as Json exposing (..)
 import Task
 import Navigation
 import Debug
+import UrlParser exposing (Parser, (</>), format, int, oneOf, s, string)
+import String
 
 
 main =
@@ -25,28 +27,57 @@ main =
 parse : Navigation.Location -> Route
 parse {pathname} =
   let
-      one = Debug.log "path" pathname
+      one = Debug.log "parse: path" pathname
+      path =
+        if String.startsWith "/" pathname then
+          String.dropLeft 1 pathname
+        else
+          pathname
   in
-     case pathname of
-       "/src/index.html" -> Movies
+     case UrlParser.parse identity routeParser path of
+       Err err -> NotFound
 
-       _ -> NotFound
+       Ok route -> route
+
 
 urlParser : Navigation.Parser Route
 urlParser =
   Navigation.makeParser parse
+
+
+moviesParser : Parser a a
+moviesParser =
+  UrlParser.oneOf
+    [ (UrlParser.s "movies")
+    , (UrlParser.s "")
+    ]
+
+
+movieParser : Parser (String -> a) a
+movieParser =
+  UrlParser.s "movie" </> UrlParser.string
+
+
+routeParser : Parser (Route -> a) a
+routeParser =
+  UrlParser.oneOf
+    [ format Movies moviesParser
+    , format Movie movieParser
+    ]
+
 
 -- Model
 
 
 type alias Model =
   { movies : List ApiResponse
+  , movie : ApiResponse
   , route : Route
   }
 
 init : Route -> (Model, Cmd Msg)
 init route =
-  (Model [] route , searchApi)
+  urlUpdate route (Model [] (ApiResponse "" "" (MovieResponse "" "" "" "" "")) route)
 
 type Route
   = Movies
@@ -58,7 +89,8 @@ type Route
 
 type Msg
   = Search
-  | FetchSucceed (List ApiResponse)
+  | MoviesFetchSucceed (List ApiResponse)
+  | MovieFetchSucceed ApiResponse
   | FetchFail Http.Error
 
 
@@ -68,16 +100,34 @@ update msg model =
     Search ->
       (model, searchApi)
 
-    FetchSucceed movies ->
+    MoviesFetchSucceed movies ->
         ({ model | movies = movies }, Cmd.none)
 
+    MovieFetchSucceed movie ->
+        ({ model | movie = movie }, Cmd.none)
+
     FetchFail _ ->
-      (model, Cmd.none)
+      ({model | route = NotFound }, Cmd.none)
 
 
 urlUpdate : Route -> Model -> (Model, Cmd Msg)
 urlUpdate route model =
-  ({model | route = route }, Cmd.none)
+  let
+      cmd =
+        case route of
+          Movie imdbID ->
+            let
+              one = Debug.log "urlUpdate: imdbID" imdbID
+            in
+              singleMovieSearch imdbID
+
+          Movies ->
+            searchApi
+
+          _ ->
+            Cmd.none
+  in
+    ({model | route = route }, cmd)
 
 
 -- View
@@ -89,6 +139,12 @@ view model =
     Movies ->
       moviesView model.movies
 
+    Movie name ->
+      let
+        one = Debug.log "view: name" name
+      in
+        movieView model.movie
+
     _ ->
       notFoundView model
 
@@ -97,6 +153,10 @@ notFoundView model =
   div [] [
     h1 [] [ text "not found" ]
   ]
+
+movieView : ApiResponse -> Html Msg
+movieView model =
+  filmView model
 
 moviesView : List ApiResponse -> Html Msg
 moviesView movies =
@@ -158,13 +218,23 @@ subscriptions model =
 
 
 -- HTTP
+baseUrl : String
+baseUrl = "http://localhost:8080/api/v0"
 
 searchApi : Cmd Msg
 searchApi =
   let
-      url = "http://localhost:8080/api/v0/movies"
+      url = baseUrl ++ "/movies"
   in
-     Task.perform FetchFail FetchSucceed (Http.get decodeApiResponse url)
+     Task.perform FetchFail MoviesFetchSucceed (Http.get decodeApiResponse url)
+
+singleMovieSearch : String -> Cmd Msg
+singleMovieSearch id =
+  let
+      url = String.join "/" [baseUrl, "movie", id]
+  in
+     Task.perform FetchFail MovieFetchSucceed (Http.get responseDecoder url)
+
 
 decodeApiResponse : Json.Decoder (List ApiResponse)
 decodeApiResponse =

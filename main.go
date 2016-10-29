@@ -68,6 +68,32 @@ func main() {
 		}
 	}(apiMatches))
 
+	http.HandleFunc("/api/v0/movie/", func(matches []remoteFile) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if origin := r.Header.Get("Origin"); origin != "" {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+				w.Header().Set("Access-Control-Allow-Headers",
+					"Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
+			}
+
+			if r.Method == "OPTIONS" {
+				return
+			}
+
+			id := filepath.Base(r.URL.Path)
+
+			for _, m := range matches {
+				if m.ApiMovie.ImdbID == id {
+					json.NewEncoder(w).Encode(m)
+					return
+				}
+			}
+
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}(apiMatches))
+
 	http.HandleFunc("/script.js", func(w http.ResponseWriter, r *http.Request) {
 		script, err := os.Open("script.js")
 		if err != nil {
