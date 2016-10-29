@@ -5,25 +5,56 @@ import Html.Events exposing (..)
 import Http
 import Json.Decode as Json exposing (..)
 import Task
+import Navigation
+import Debug
 
 
 main =
-  Html.program
+  Navigation.program urlParser
     { init = init
     , view = view
     , update = update
+    , urlUpdate = urlUpdate
     , subscriptions = subscriptions
     }
 
+
+-- UrlParsing
+
+
+parse : Navigation.Location -> Route
+parse {pathname} =
+  let
+      one = Debug.log "path" pathname
+  in
+     case pathname of
+       "/src/index.html" -> Movies
+
+       _ -> NotFound
+
+urlParser : Navigation.Parser Route
+urlParser =
+  Navigation.makeParser parse
+
 -- Model
 
-type alias Model = List ApiResponse
 
-init : (Model, Cmd Msg)
-init = ([], searchApi)
+type alias Model =
+  { movies : List ApiResponse
+  , route : Route
+  }
 
+init : Route -> (Model, Cmd Msg)
+init route =
+  (Model [] route , searchApi)
+
+type Route
+  = Movies
+  | Movie String
+  | NotFound
 
 -- Update
+
 
 type Msg
   = Search
@@ -37,22 +68,45 @@ update msg model =
     Search ->
       (model, searchApi)
 
-    FetchSucceed results ->
-        (results, Cmd.none)
+    FetchSucceed movies ->
+        ({ model | movies = movies }, Cmd.none)
 
     FetchFail _ ->
       (model, Cmd.none)
 
 
+urlUpdate : Route -> Model -> (Model, Cmd Msg)
+urlUpdate route model =
+  ({model | route = route }, Cmd.none)
+
+
 -- View
+
+
 view : Model -> Html Msg
 view model =
+  case model.route of
+    Movies ->
+      moviesView model.movies
+
+    _ ->
+      notFoundView model
+
+notFoundView : Model -> Html Msg
+notFoundView model =
+  div [] [
+    h1 [] [ text "not found" ]
+  ]
+
+moviesView : List ApiResponse -> Html Msg
+moviesView movies =
   div [
     classList [
       ("cf", True),
       ("pa2", True)
     ]
-  ] (List.map filmView model)
+  ] (List.map filmView movies)
+
 
 filmView : ApiResponse -> Html msg
 filmView resp =
