@@ -25,7 +25,7 @@ main =
 
 
 parse : Navigation.Location -> Route
-parse {hash} =
+parse {pathname, hash} =
   let
       one = Debug.log "parse: hash" hash
       path =
@@ -47,10 +47,7 @@ urlParser =
 
 moviesParser : Parser a a
 moviesParser =
-  UrlParser.oneOf
-    [ (UrlParser.s "movies")
-    , (UrlParser.s "")
-    ]
+  UrlParser.s "movies"
 
 
 movieParser : Parser (String -> a) a
@@ -58,11 +55,16 @@ movieParser =
   UrlParser.s "movie" </> UrlParser.string
 
 
+topLevelParser : Parser a a
+topLevelParser =
+  UrlParser.s ""
+
 routeParser : Parser (Route -> a) a
 routeParser =
   UrlParser.oneOf
     [ format Movies moviesParser
     , format Movie movieParser
+    , format TopLevel topLevelParser
     ]
 
 
@@ -82,6 +84,7 @@ init route =
 type Route
   = Movies
   | Movie String
+  | TopLevel
   | NotFound
 
 -- Update
@@ -123,6 +126,9 @@ urlUpdate route model =
 
           Movies ->
             searchApi
+
+          TopLevel ->
+            Navigation.modifyUrl "/#/movies"
 
           _ ->
             Cmd.none
