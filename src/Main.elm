@@ -25,14 +25,14 @@ main =
 
 
 parse : Navigation.Location -> Route
-parse {pathname} =
+parse {hash} =
   let
-      one = Debug.log "parse: path" pathname
+      one = Debug.log "parse: hash" hash
       path =
-        if String.startsWith "/" pathname then
-          String.dropLeft 1 pathname
+        if String.startsWith "#/" hash then
+          String.dropLeft 2 hash
         else
-          pathname
+          hash
   in
      case UrlParser.parse identity routeParser path of
        Err err -> NotFound
@@ -157,7 +157,7 @@ notFoundView model =
 movieView : ApiResponse -> Html Msg
 movieView model =
   a [ class "db link dim tc"
-    , href ("/movie/" ++ model.apiMovie.imdbID) ]
+    , href ("#/movie/" ++ model.apiMovie.imdbID) ]
     [ filmView model ]
 
 moviesView : List ApiResponse -> Html Msg
