@@ -44,11 +44,9 @@ movieView model =
 
 moviesView : List ApiResponse -> Html Msg
 moviesView movies =
-  div [
-    classList [
-      ("cf", True),
-      ("pa2", True)
-    ]
+  div [ classList [ ("cf", True)
+                  , ("pa2", True)
+                  ]
   ] (List.map movieView movies)
 
 
@@ -57,35 +55,28 @@ filmView resp =
   let
       movie = resp.apiMovie
   in
-    div [
-        classList [
-          ("fl", True),
-          ("w-50", False),
-          ("pa2", True),
-          ("w-25-m", True),
-          ("w-w-20-l", True)
-        ]
+    div [ classList [ ("fl", True)
+                    , ("w-50", False)
+                    , ("pa2", True)
+                    , ("w-25-m", True)
+                    , ("w-w-20-l", True)
+                    ]
       ]
-      [ img [
-          src movie.poster,
-          classList [
-            ("db", True),
-            ("w-100", True),
-            ("outline", True),
-            ("black-10", True)
-          ]
+      [ img [ src movie.poster
+            , classList [ ("db", True)
+                        , ("w-100", True)
+                        , ("outline", True)
+                        , ("black-10", True)
+                        ]
         ] []
-      , dl [
-          classList [
-            ("mt2", True),
-            ("f6", True),
-            ("lh-copy", True)
-            ]
-        ] [
-          filmMetaData movie.title,
-          filmMetaData movie.year,
-          filmMetaData movie.kind
-        ]
+      , dl [ classList [ ("mt2", True)
+                       , ("f6", True)
+                       , ("lh-copy", True)
+                       ]
+        ] [ filmMetaData movie.title
+          , filmMetaData movie.year
+          , filmMetaData movie.kind
+          ]
       ]
 
 
