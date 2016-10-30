@@ -1,108 +1,32 @@
-import Html exposing (..)
-import Html.App as Html
-import Html.Attributes exposing (..)
-import Html.Events exposing (..)
-import Http
-import Json.Decode as Json exposing (..)
-import Task
+-- External Imports
 import Navigation
-import Debug
-import UrlParser exposing (Parser, (</>), format, int, oneOf, s, string)
-import String
 
+-- Internal Imports
+import Parsing
+import Views
+import Api
+import Types exposing (..)
 
 main =
-  Navigation.program urlParser
+  Navigation.program Parsing.urlParser
     { init = init
-    , view = view
+    , view = Views.view
     , update = update
     , urlUpdate = urlUpdate
     , subscriptions = subscriptions
     }
 
 
--- UrlParsing
-
-
-parse : Navigation.Location -> Route
-parse {pathname, hash} =
-  let
-      one = Debug.log "parse: hash" hash
-      path =
-        if String.startsWith "#/" hash then
-          String.dropLeft 2 hash
-        else
-          hash
-  in
-     case UrlParser.parse identity routeParser path of
-       Err err -> NotFound
-
-       Ok route -> route
-
-
-urlParser : Navigation.Parser Route
-urlParser =
-  Navigation.makeParser parse
-
-
-moviesParser : Parser a a
-moviesParser =
-  UrlParser.s "movies"
-
-
-movieParser : Parser (String -> a) a
-movieParser =
-  UrlParser.s "movie" </> UrlParser.string
-
-
-topLevelParser : Parser a a
-topLevelParser =
-  UrlParser.s ""
-
-routeParser : Parser (Route -> a) a
-routeParser =
-  UrlParser.oneOf
-    [ format Movies moviesParser
-    , format Movie movieParser
-    , format TopLevel topLevelParser
-    ]
-
-
--- Model
-
-
-type alias Model =
-  { movies : List ApiResponse
-  , movie : ApiResponse
-  , route : Route
-  }
-
 init : Route -> (Model, Cmd Msg)
 init route =
   urlUpdate route (Model [] (ApiResponse "" "" (MovieResponse "" "" "" "" "")) route)
 
-type Route
-  = Movies
-  | Movie String
-  | TopLevel
-  | NotFound
-
 -- Update
-
-
-type Msg
-  = Search
-  | MoviesFetchSucceed (List ApiResponse)
-  | MovieFetchSucceed ApiResponse
-  | FetchFail Http.Error
 
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
-    Search ->
-      (model, searchApi)
-
     MoviesFetchSucceed movies ->
         ({ model | movies = movies }, Cmd.none)
 
@@ -122,10 +46,10 @@ urlUpdate route model =
             let
               one = Debug.log "urlUpdate: imdbID" imdbID
             in
-              singleMovieSearch imdbID
+              Api.singleMovieSearch imdbID
 
           Movies ->
-            searchApi
+            Api.searchApi
 
           TopLevel ->
             Navigation.modifyUrl "/#/movies"
@@ -136,86 +60,6 @@ urlUpdate route model =
     ({model | route = route }, cmd)
 
 
--- View
-
-
-view : Model -> Html Msg
-view model =
-  case model.route of
-    Movies ->
-      moviesView model.movies
-
-    Movie name ->
-      let
-        one = Debug.log "view: name" name
-      in
-        filmView model.movie
-
-    _ ->
-      notFoundView model
-
-notFoundView : Model -> Html Msg
-notFoundView model =
-  div [] [
-    h1 [] [ text "not found" ]
-  ]
-
-movieView : ApiResponse -> Html Msg
-movieView model =
-  a [ class "db link dim tc"
-    , href ("#/movie/" ++ model.apiMovie.imdbID) ]
-    [ filmView model ]
-
-moviesView : List ApiResponse -> Html Msg
-moviesView movies =
-  div [
-    classList [
-      ("cf", True),
-      ("pa2", True)
-    ]
-  ] (List.map movieView movies)
-
-
-filmView : ApiResponse -> Html msg
-filmView resp =
-  let
-      movie = resp.apiMovie
-  in
-    div [
-        classList [
-          ("fl", True),
-          ("w-50", False),
-          ("pa2", True),
-          ("w-20", True),
-          ("w-w-20-l", True)
-        ]
-      ]
-      [ img [
-          src movie.poster,
-          classList [
-            ("db", True),
-            ("w-100", True),
-            ("outline", True),
-            ("black-10", True)
-          ]
-        ] []
-      , dl [
-          classList [
-            ("mt2", True),
-            ("f6", True),
-            ("lh-copy", True)
-            ]
-        ] [
-          filmMetaData movie.title,
-          filmMetaData movie.year,
-          filmMetaData movie.kind
-        ]
-      ]
-
-filmMetaData : String -> Html msg
-filmMetaData data =
-  dt [ class "m10 black truncate w-100" ] [ text data ]
-
 -- SUBSCRIPTIONS
 
 
@@ -224,55 +68,3 @@ subscriptions model =
   Sub.none
 
 
--- HTTP
-baseUrl : String
-baseUrl = "http://localhost:8080/api/v0"
-
-searchApi : Cmd Msg
-searchApi =
-  let
-      url = baseUrl ++ "/movies"
-  in
-     Task.perform FetchFail MoviesFetchSucceed (Http.get decodeApiResponse url)
-
-singleMovieSearch : String -> Cmd Msg
-singleMovieSearch id =
-  let
-      url = String.join "/" [baseUrl, "movie", id]
-  in
-     Task.perform FetchFail MovieFetchSucceed (Http.get responseDecoder url)
-
-
-decodeApiResponse : Json.Decoder (List ApiResponse)
-decodeApiResponse =
-  Json.list responseDecoder
-
-type alias MovieResponse =
-  { imdbID : String
-  , poster : String
-  , title : String
-  , kind : String
-  , year : String
-  }
-
-type alias ApiResponse =
-  { title : String
-  , fullPath : String
-  , apiMovie : MovieResponse
-  }
-
-responseDecoder : Json.Decoder ApiResponse
-responseDecoder =
-  Json.object3 ApiResponse
-    ("Title" := Json.string)
-    ("FullPath" := Json.string)
-    ("ApiMovie" := apiResponseDecoder)
-
-apiResponseDecoder : Json.Decoder MovieResponse
-apiResponseDecoder =
-  Json.object5 MovieResponse
-    ("ImdbID" := Json.string)
-    ("Poster" := Json.string)
-    ("Title" := Json.string)
-    ("Type" := Json.string)
-    ("Year" := Json.string)
