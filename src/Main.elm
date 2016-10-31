@@ -28,10 +28,10 @@ update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
     MoviesFetchSucceed movies ->
-        ({ model | movies = movies }, Cmd.none)
+      ({ model | movies = movies }, Cmd.none)
 
     MovieFetchSucceed movie ->
-        ({ model | movie = movie }, Cmd.none)
+      ({ model | movie = movie }, Cmd.none)
 
     FetchFail _ ->
       ({model | route = NotFound }, Cmd.none)
